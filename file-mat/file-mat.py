@@ -360,7 +360,7 @@ register(
         (PF_INT, 'image-height', 'Height of full-sized image')
     ],
     thumbnail_mat, #callback
-    has_run_mode = False
+    no_run_mode_param = True
 )
 
 register(
