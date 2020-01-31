@@ -88,7 +88,7 @@ class MAT:
 
 
 
-    INDEXED, RGB, RGBA,  = range(1, 4)
+    INDEXED, RGB, RGBA,  = range(3)
 
     color_format = namedtuple('color_format', [
         'color_mode',
