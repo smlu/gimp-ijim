@@ -102,11 +102,11 @@ def save_mat(first_img, drawable, filename, raw_filename):
             self.connect("destroy", self.on_destroy)
 
             export_opt_box = self.make_export_options_box()
-            img_view_frame = self.make_images_view(reversed(gimp.image_list()))
+            self.img_view_frame = self.make_images_view(reversed(gimp.image_list()))
 
             hbox = gtk.HBox()
             hbox.pack_start(export_opt_box, True, True, 20)
-            hbox.pack_start(img_view_frame, True, True, 5)
+            hbox.pack_start(self.img_view_frame, True, True, 5)
 
             self.vbox.pack_start(hbox)
             self.vbox.show_all()
@@ -180,6 +180,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
                 self.liststore[path][4] = export
                 self.export_imgs_count += 1 if export else -1
                 self.set_btn_export_sensitive(self.export_imgs_count > 0)
+                self.img_view_frame.set_label("Images to export: %d" % self.export_imgs_count)
 
             cb_export = gtk.CellRendererToggle()
             cb_export.connect("toggled", on_cb_export_toggled)
@@ -269,7 +270,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
             scrl_win.add(self.iconview)
             scrl_win.set_size_request(thumb_size, thumb_size * 4)
 
-            frame_imgs = gimpui.Frame("Images to export:")
+            frame_imgs = gimpui.Frame("Images to export: %d" % self.export_imgs_count)
             frame_imgs.set_property("label-xalign", 0.05)
             frame_imgs.set_shadow_type(gtk.SHADOW_IN)
             frame_imgs.add(scrl_win)
