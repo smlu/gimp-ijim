@@ -50,7 +50,7 @@ class MAT:
                 if not self._display_lod:
                     break
 
-    def save_to_file(self, file_path, bpp):
+    def save_to_file(self, file_path, bpp, min_mipmap_size = 8, max_mipmap_level = 4): # 
         if bpp != 16 and bpp != 32:
             raise ValueError("bpp argument must be 16 or 32")
 
@@ -67,7 +67,7 @@ class MAT:
         MAT._write_records(f, img_count)
 
         for idx, i in enumerate(self._imgs):
-            MAT.write_mipmap(f, i, cf)
+            MAT.write_mipmap(f, i, cf, min_mipmap_size, max_mipmap_level)
             gimp.progress_update(idx / float(img_count))
 
     @property
@@ -342,10 +342,10 @@ class MAT:
         return MAT.mipmap(mmh.width, mmh.height, ci, pd)
 
     @staticmethod
-    def write_mipmap(f, img, ci): # f: file img: image ci: color_format
+    def write_mipmap(f, img, ci, min_mipmap_size, max_mipmap_level): # f:file, img:image, ci:color_format, min_mipmap_size:int, max_mipmap_level:int
         imgs = [img]
         if (is_image_mipmap(img)):
-            imgs += make_mipmaps(img, 4) # max mipmaps texture = 4
+            imgs += make_mipmaps(img, min_mipmap_size, max_mipmap_level)
 
         mmh = MAT.mat_mipmap_header(img.width, img.height, 0, 0, 0, len(imgs))
         f.write( MAT.mmm_serf.pack(*mmh) )

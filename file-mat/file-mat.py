@@ -18,15 +18,18 @@ AUTHOR           = 'smlu'
 COPYRIGHT        = AUTHOR
 COPYRIGHT_YEAR   = '2019'
 
-
-
 EDITOR_PROC      = 'ijim-mat-export-dialog'
 LOAD_PROC        = 'file-ijim-mat-load'
 LOAD_THUMB_PROC  = 'file-ijim-mat-load-thumb'
 SAVE_PROC        = 'file-ijim-mat-save'
 
-DEBUG_MODE           = False
-DISPLAY_LOD_TEXTURES = False
+DEBUG_MODE               = True
+DISPLAY_MIPMAP_TEXTURES  = False
+
+DEFAULT_MAX_MIPMAP_LEVEL  = 4
+DEFAULT_MIN_MIPMAP_SIZE   = 16
+INPUT_MAX_MIPMAP_LEVEL    = 16
+INPUT_MAX_MIN_MIPMAP_SIZE = 128
 
 
 
@@ -47,7 +50,7 @@ def thumbnail_mat(file_path, thumb_size):
 
 def load_mat(file_path, raw_filename):
     try:
-        mat = MAT(DISPLAY_LOD_TEXTURES)
+        mat = MAT(DISPLAY_MIPMAP_TEXTURES)
         mat.load_from_file(file_path)
         last_idx = len(mat.images) - 1
         if last_idx < 0:
@@ -100,6 +103,9 @@ def save_mat(first_img, drawable, filename, raw_filename):
             self.set_name(EDITOR_PROC)
             self.connect('response', self.on_response)
             self.connect("destroy", self.on_destroy)
+            
+            self.mm_max_level = DEFAULT_MAX_MIPMAP_LEVEL
+            self.mm_min_size  = DEFAULT_MIN_MIPMAP_SIZE
 
             export_opt_box = self.make_export_options_box()
             self.img_view_frame = self.make_images_view(reversed(gimp.image_list()))
@@ -117,6 +123,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
             self.set_resizable(False)
 
         def make_export_options_box(self):
+            # Color depth
             self.rb_color_16bit = gtk.RadioButton(label="16 bit")
             self.rb_color_32bit = gtk.RadioButton(group=self.rb_color_16bit, label="32 bit")
 
@@ -124,14 +131,65 @@ def save_mat(first_img, drawable, filename, raw_filename):
             box.pack_start(self.rb_color_16bit, False, False)
             box.pack_start(self.rb_color_32bit, False, False)
 
-            frame = gimpui.Frame("Color depth:")
-            frame.set_shadow_type(gtk.SHADOW_IN)
-            frame.add(box)
-            #frame.add(self.rb_32bit)
+            cdo_frame = gimpui.Frame("Color depth:")
+            cdo_frame.set_shadow_type(gtk.SHADOW_IN)
+            cdo_frame.add(box)
+            
+            # Min MM size
+            sb_mm_min_size = gtk.SpinButton(\
+                gtk.Adjustment(self.mm_min_size, 2, INPUT_MAX_MIN_MIPMAP_SIZE, 1, 1, 0), climb_rate=1)
+            sb_mm_min_size.set_tooltip_text(_('Min mipmap texture size'))
+            sb_mm_min_size.set_has_frame(False)
+            sb_mm_min_size.set_numeric(True)     
+            sb_mm_min_size.set_update_policy(gtk.UPDATE_IF_VALID)
+            
+            def sb_mm_min_size_changed(sp):
+                val = sp.get_value_as_int()
+                if val != self.mm_min_size:
+                    if val > self.mm_min_size:
+                        self.mm_min_size = self.mm_min_size << 1
+                    else:
+                        self.mm_min_size = self.mm_min_size >> 1
+                    sp.set_value(self.mm_min_size)
+            sb_mm_min_size.connect("changed", sb_mm_min_size_changed)
+            
+            t_mm_min_size = gtk.Table(1, 2 ,False)
+            t_mm_min_size.attach(gtk.Label("Min size:  "), 0,1,0,1)
+            t_mm_min_size.attach(sb_mm_min_size,  1,2,0,1)
+            
+            # Max MM level
+            sb_mm_level_count = gtk.SpinButton(\
+                gtk.Adjustment(self.mm_max_level, 1, INPUT_MAX_MIPMAP_LEVEL, 1, 1, ), climb_rate=1)
+            sb_mm_level_count.set_tooltip_text(_('Max mipmap level'))
+            sb_mm_level_count.set_has_frame(False)
+            sb_mm_level_count.set_numeric(True)     
+            sb_mm_level_count.set_update_policy(gtk.UPDATE_IF_VALID)
+            
+            def sb_mm_max_level_changed(sp):
+                self.mm_max_level = sp.get_value_as_int()
+            sb_mm_level_count.connect("changed", sb_mm_max_level_changed)
+            
+            t_mm_level_count = gtk.Table(1, 2 ,False)
+            t_mm_level_count.attach(gtk.Label("Max level:  "), 0,1,0,1)
+            t_mm_level_count.attach(sb_mm_level_count,  1,2,0,1)
+            
+            # Mipmap option frame
+            box = gtk.VBox(True, 5)
+            box.pack_start(t_mm_min_size, False, False)
+            box.pack_start(t_mm_level_count, False, False)
+            mmo_frame = gimpui.Frame("Mipmap Options:")
+            mmo_frame.set_shadow_type(gtk.SHADOW_IN)
+            mmo_frame.add(box)
 
+            # Main option frame
+            o_box = gtk.VBox()
+            o_box.set_size_request(70, -1)
+            o_box.pack_start(cdo_frame, False, False, 10)
+            o_box.pack_start(mmo_frame, False, False, 10)
+            
             box = gtk.VBox()
-            box.set_size_request(70, -1)
-            box.pack_start(frame, True, False, 50)
+            box.set_size_request(90, -1)
+            box.pack_start(o_box, True, False)
 
             if DEBUG_MODE:
                 def on_makemip_maps(btn):
@@ -139,7 +197,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
                     if img == None:
                         return
                     try:
-                        for mm in make_mipmaps(img):
+                        for mm in make_mipmaps(img, self.mm_min_size, self.mm_max_level):
                             sanitize_image(mm)
                             gimp.Display(mm)
                     finally:
@@ -149,7 +207,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
                 self.btn_mkmm = gtk.Button("Show\nMipmaps")
                 self.btn_mkmm.set_sensitive(False)
                 self.btn_mkmm.connect("clicked", on_makemip_maps)
-                box.pack_start(self.btn_mkmm , False, False)
+                o_box.pack_start(self.btn_mkmm , False, False)
             # DEBUG_MODE
 
             return box
@@ -281,8 +339,8 @@ def save_mat(first_img, drawable, filename, raw_filename):
         def export_selected_images(self):
             mat = MAT()
             for row in self.liststore:
-                if row[4]:
-                    i = row[0].duplicate()
+                if row[4]: # 4 - include in export
+                    i = row[0].duplicate() # 0 - image
                     if len(i.layers) > 1:
                         i.merge_visible_layers(CLIP_TO_IMAGE)
 
@@ -294,7 +352,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
 
             # Export images as MAT file format
             bpp = 16 if self.rb_color_16bit.get_active() else 32
-            mat.save_to_file(filename, bpp)
+            mat.save_to_file(filename, bpp, self.mm_min_size, self.mm_max_level)
 
         def set_btn_export_sensitive(self, sensitive):
             self.get_widget_for_response(RESPONSE_EXPORT).set_sensitive(sensitive)

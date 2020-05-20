@@ -11,11 +11,12 @@ def set_image_as_mipmap(img, is_mipmap):
     img.attach_new_parasite("mipmap", is_mipmap, "")
 
 
-def make_mipmaps(img, max = -1):
+def make_mipmaps(img, min_size = 1, max_level = -1):
+    if min_size < 1 or max_level == 0: return  []
     mipmaps = []
     mip_width  = img.width >> 1
     mip_height = img.height >> 1
-    while(mip_width >= 16 and mip_height >= 16 and max != 0):
+    while(mip_width >= min_size and mip_height >= min_size and max_level - 1 != 0):
         mip = img.duplicate()
         mip.scale(mip_width, mip_height)
         #pdb.gimp_image_scale_full(mip, mip_width, mip_height, INTERPOLATION_CUBIC)
@@ -25,7 +26,7 @@ def make_mipmaps(img, max = -1):
         mipmaps.append(mip)
         mip_width  = mip_width >> 1
         mip_height = mip_height >> 1
-        max -= 1
+        max_level -= 1
 
     return mipmaps
 
