@@ -246,6 +246,8 @@ class MAT:
         # Return pixel representation
         if ci.alpha_bpp != 0:
             a = ((p >> ci.alpha_shl) & MAT._get_color_mask(ci.alpha_bpp)) << ci.alpha_shr
+            if ci.alpha_bpp == 1: # RGBA5551
+                a = 255 if a > 0 else 0
             p = (int(r), int(g), int(b), int(a))
         else:
             p = (int(r), int(g), int(b))
