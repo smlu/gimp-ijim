@@ -278,15 +278,14 @@ class MAT:
         d_row_len    = d_pixel_size * width
         dpd          = array("B", "\x00" * (height * d_row_len))
 
-        # decode pixel little endian if not 24bpp
-        # decode pixel as big endian if 24bpp
-        fmt = "B" if pixel_size == 1 else "<H" if pixel_size == 2 else ">I" if pixel_size == 3 else "<I"
+        # decode pixel little endian
+        fmt = "B" if pixel_size == 1 else "<H" if pixel_size == 2 else "<I"
         for r in range(0, height):
             for c in range(0, row_len, pixel_size):
                 i = c + r * row_len
                 p_raw = pd[i: i + pixel_size]
                 if pixel_size == 3:
-                    p_raw = bytearray(1) + p_raw# Note: might not work for bigendian
+                    p_raw = p_raw + bytearray(1)
                 pixel = int(unpack(fmt, p_raw)[0])
 
                 d_pos = (c / pixel_size) * d_pixel_size  + r * d_row_len
@@ -304,16 +303,15 @@ class MAT:
         e_row_len    = e_pixel_size * width
         epd          = array("B", "\x00" * (height * e_row_len))
 
-        # encode pixel little endian if not 24bpp
-        # encode pixel as big endian if 24bpp
-        fmt = "B" if e_pixel_size == 1 else "<H" if e_pixel_size == 2 else ">I" if e_pixel_size == 3 else "<I"
+        # encode pixel as little endian
+        fmt = "B" if e_pixel_size == 1 else "<H" if e_pixel_size == 2 else "<I"
         for y in range(0, height):
             for x in range(0, width):
                 p   = tuple(array("B",pr[x, y]))
                 e_p = MAT._encode_pixel(p, ci)
                 e_p = array("B", pack(fmt, e_p))
                 if e_pixel_size == 3:
-                    e_p = e_p[1::]
+                    e_p = e_p[:3:]
 
                 e_pos = x * e_pixel_size  + y * e_row_len
                 epd[e_pos : (e_pos + e_pixel_size)] = e_p
