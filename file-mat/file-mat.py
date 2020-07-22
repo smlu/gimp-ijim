@@ -23,7 +23,7 @@ LOAD_PROC        = 'file-ijim-mat-load'
 LOAD_THUMB_PROC  = 'file-ijim-mat-load-thumb'
 SAVE_PROC        = 'file-ijim-mat-save'
 
-DEBUG_MODE               = True
+DEBUG_MODE                = False
 DISPLAY_MIPMAP_LOD_CHAIN  = False # If True all images from mipmap LOD chain will be displayed
 
 DEFAULT_MAX_MIPMAP_LEVEL  = 4
@@ -32,10 +32,9 @@ INPUT_MAX_MIPMAP_LEVEL    = 16
 INPUT_MAX_MIN_MIPMAP_SIZE = 128
 
 
-
 def thumbnail_mat(file_path, thumb_size):
     mat = MAT()
-    mat.load_from_file(file_path, 1)
+    mat.load_from_file(file_path, max_cells=1)
 
     img = mat.images[0].duplicate()
     width  = img.width
@@ -45,7 +44,6 @@ def thumbnail_mat(file_path, thumb_size):
         swidth  = int(width * scale)
         sheight = int(height * scale)
         pdb.gimp_image_scale(img, swidth, sheight)
-
     return (img, width, height)
 
 def load_mat(file_path, raw_filename):
@@ -59,10 +57,8 @@ def load_mat(file_path, raw_filename):
         for i in range(0, last_idx):
             gimp.Display(mat.images[i])
             gimp.displays_flush()
-
         return mat.images[last_idx].duplicate()
     except Exception as e:
-        #N_("translation")
         fail("Error loading MAT file:\n\n%s!" % e.message)
 
 def save_mat(first_img, drawable, filename, raw_filename):
@@ -103,8 +99,8 @@ def save_mat(first_img, drawable, filename, raw_filename):
             self.set_name(EDITOR_PROC)
             self.connect('response', self.on_response)
             self.connect("destroy", self.on_destroy)
-            
-            self.mm_max_level = DEFAULT_MAX_MIPMAP_LEVEL
+
+            self.mm_max_levels = DEFAULT_MAX_MIPMAP_LEVEL
             self.mm_min_size  = DEFAULT_MIN_MIPMAP_SIZE
 
             export_opt_box = self.make_export_options_box()
@@ -134,15 +130,15 @@ def save_mat(first_img, drawable, filename, raw_filename):
             cdo_frame = gimpui.Frame("Color depth:")
             cdo_frame.set_shadow_type(gtk.SHADOW_IN)
             cdo_frame.add(box)
-            
+
             # Min MM size
             sb_mm_min_size = gtk.SpinButton(\
                 gtk.Adjustment(self.mm_min_size, 2, INPUT_MAX_MIN_MIPMAP_SIZE, 1, 1, 0), climb_rate=1)
             sb_mm_min_size.set_tooltip_text(_('Min mipmap texture size'))
             sb_mm_min_size.set_has_frame(False)
-            sb_mm_min_size.set_numeric(True)     
+            sb_mm_min_size.set_numeric(True)
             sb_mm_min_size.set_update_policy(gtk.UPDATE_IF_VALID)
-            
+
             def sb_mm_min_size_changed(sp):
                 val = sp.get_value_as_int()
                 if val != self.mm_min_size:
@@ -152,27 +148,27 @@ def save_mat(first_img, drawable, filename, raw_filename):
                         self.mm_min_size = self.mm_min_size >> 1
                     sp.set_value(self.mm_min_size)
             sb_mm_min_size.connect("changed", sb_mm_min_size_changed)
-            
+
             t_mm_min_size = gtk.Table(1, 2 ,False)
             t_mm_min_size.attach(gtk.Label("Min size:  "), 0,1,0,1)
             t_mm_min_size.attach(sb_mm_min_size,  1,2,0,1)
-            
+
             # Max MM level
             sb_mm_level_count = gtk.SpinButton(\
-                gtk.Adjustment(self.mm_max_level, 1, INPUT_MAX_MIPMAP_LEVEL, 1, 1, ), climb_rate=1)
+                gtk.Adjustment(self.mm_max_levels, 1, INPUT_MAX_MIPMAP_LEVEL, 1, 1, ), climb_rate=1)
             sb_mm_level_count.set_tooltip_text(_('Max mipmap level'))
             sb_mm_level_count.set_has_frame(False)
-            sb_mm_level_count.set_numeric(True)     
+            sb_mm_level_count.set_numeric(True)
             sb_mm_level_count.set_update_policy(gtk.UPDATE_IF_VALID)
-            
+
             def sb_mm_max_level_changed(sp):
-                self.mm_max_level = sp.get_value_as_int()
+                self.mm_max_levels = sp.get_value_as_int()
             sb_mm_level_count.connect("changed", sb_mm_max_level_changed)
-            
+
             t_mm_level_count = gtk.Table(1, 2 ,False)
             t_mm_level_count.attach(gtk.Label("Max level:  "), 0,1,0,1)
             t_mm_level_count.attach(sb_mm_level_count,  1,2,0,1)
-            
+
             # Mipmap option frame
             box = gtk.VBox(True, 5)
             box.pack_start(t_mm_min_size, False, False)
@@ -186,7 +182,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
             o_box.set_size_request(70, -1)
             o_box.pack_start(cdo_frame, False, False, 10)
             o_box.pack_start(mmo_frame, False, False, 10)
-            
+
             box = gtk.VBox()
             box.set_size_request(90, -1)
             box.pack_start(o_box, True, False)
@@ -197,7 +193,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
                     if img == None:
                         return
                     try:
-                        for mm in make_mipmaps(img, self.mm_min_size, self.mm_max_level):
+                        for mm in make_mipmaps(img, self.mm_min_size, self.mm_max_levels):
                             sanitize_image(mm)
                             gimp.Display(mm)
                     finally:
@@ -352,7 +348,7 @@ def save_mat(first_img, drawable, filename, raw_filename):
 
             # Export images as MAT file format
             bpp = 16 if self.rb_color_16bit.get_active() else 32
-            mat.save_to_file(filename, bpp, self.mm_min_size, self.mm_max_level)
+            mat.save_to_file(filename, bpp, self.mm_min_size, self.mm_max_levels)
 
         def set_btn_export_sensitive(self, sensitive):
             self.get_widget_for_response(RESPONSE_EXPORT).set_sensitive(sensitive)
@@ -386,10 +382,6 @@ def save_mat(first_img, drawable, filename, raw_filename):
     ExportDialog().run()
 
 
-
-
-
-
 def register_load_handlers():
     #gimp.register_load_handler(LOAD_PROC, 'mat', '')
     gimp.register_magic_load_handler(LOAD_PROC, 'mat', "", "0,string," + str(MAT_FILE_MAGIC) + chr(MAT_REQUIRED_VERSION))
@@ -397,8 +389,6 @@ def register_load_handlers():
 
 def register_save_handlers():
     gimp.register_save_handler(SAVE_PROC, 'mat', '')
-
-
 
 
 register(
