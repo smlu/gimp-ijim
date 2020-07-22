@@ -14,14 +14,20 @@ MAT_REQUIRED_TYPE    = 2
 # for game Indiana Jones and the Infernal Machine
 # Note: on destruction internal stored images are deleted
 class MAT:
-    def __init__(self, display_lod = False):
+    def __init__(self):
         self._imgs = []
-        self._display_lod = display_lod
 
     def __del__(self):
         self.clear()
 
-    def load_from_file(self, file_path, max_mmaps = -1):
+    def load_from_file(self, file_path, max_cells = -1, parse_lod = False):
+        '''
+        Load MAT from file.
+        param: file_path: path to the MAT file
+        param: max_cells: max number of celluloid images to load.
+                          Default -1, meaning all.
+        '''
+
         self.clear()
 
         f = open(file_path, 'rb')
@@ -29,28 +35,34 @@ class MAT:
         r = self._read_records(f, h)
 
         mat_name  = file_path #os.path.basename(file_path)
-        max_mmaps = h.mipmap_count if max_mmaps < 0 else max_mmaps
-        for mm_idx in range(0, max_mmaps):
+        max_cells = h.cel_count if max_cells < 0 else max_cells
+        for cel_idx in range(0, max_cells):
             mm = self._read_mipmap(f, h.color_info)
-            for tex_idx, tex in enumerate(mm.pixel_data_array):
-                img_width  = mm.width  >> tex_idx
-                img_height = mm.height >> tex_idx
-                img_name   = self._get_tex_name(mm_idx, tex_idx, mat_name)
+            for lod_num, pixdata in enumerate(mm.pixel_data_array):
+                img_width  = mm.width  >> lod_num
+                img_height = mm.height >> lod_num
+                img_name   = self._get_img_name(cel_idx, lod_num, mat_name)
 
-                img = MAT._make_image(tex, img_width, img_height, mm.color_info)
+                img = MAT._make_image(pixdata, img_width, img_height, mm.color_info)
                 img.filename = img_name
 
                 sanitize_image(img)
 
-                if tex_idx == 0 and len(mm.pixel_data_array) > 1:
+                if lod_num == 0 and len(mm.pixel_data_array) > 1:
                     set_image_as_mipmap(img, True)
                 self._imgs.append(img)
 
-                # Skip displaying mipmaps LOD textures?
-                if not self._display_lod:
+                # Skip displaying mipmap's LOD images?
+                if not parse_lod:
                     break
 
-    def save_to_file(self, file_path, bpp, min_mipmap_size = 8, max_mipmap_level = 4): # 
+    def save_to_file(self, file_path, bpp, min_mipmap_size = 8, max_mipmap_levels = 4):
+        '''
+        Save MAT to file.
+        :param: file_path: file path where to save MAT.
+        :param: min_mipmap_size: minimum mipmap LOD image size.
+        :param: max_mipmap_levels: maximum number of mipmap levels.
+        '''
         if bpp != 16 and bpp != 32:
             raise ValueError("bpp argument must be 16 or 32")
 
@@ -67,7 +79,7 @@ class MAT:
         MAT._write_records(f, img_count)
 
         for idx, i in enumerate(self._imgs):
-            MAT.write_mipmap(f, i, cf, min_mipmap_size, max_mipmap_level)
+            MAT.write_mipmap(f, i, cf, min_mipmap_size, max_mipmap_levels)
             gimp.progress_update(idx / float(img_count))
 
     @property
@@ -100,17 +112,15 @@ class MAT:
     ])
     cf_serf = Struct('<14I')
 
-
     mat_header = namedtuple('mat_header', [
         'magic',
         'version',
         'type',
         'record_count',
-        'mipmap_count',
+        'cel_count',
         'color_info'
     ])
     mh_serf = Struct('<4siIii')
-
 
     mat_record_header = namedtuple('mat_record_header', [
         'record_type',
@@ -122,10 +132,9 @@ class MAT:
         'unknown_5',
         'unknown_6',
         'unknown_7',
-        'mipmap_idx'
+        'cel_idx'
     ])
     mrh_serf = Struct('<10i')
-
 
     mat_mipmap_header = namedtuple('mat_mipmap_header', [
         'width',
@@ -133,10 +142,9 @@ class MAT:
         'transparent',
         'unknown_1',
         'unknown_2',
-        'texture_count',
+        'mipmap_levels',
     ])
     mmm_serf = Struct('<6i')
-
 
     mipmap = namedtuple("mipmap", [
         'width',
@@ -150,7 +158,6 @@ class MAT:
             if i.active_layer and i.active_layer.has_alpha:
                 return True
         return False
-
 
     @staticmethod
     def make_color_format(bpp, alpha):
@@ -180,20 +187,20 @@ class MAT:
             raise ImportError("Invalid MAT file version")
         if h.type != MAT_REQUIRED_TYPE:
             raise ImportError("Invalid MAT file type")
-        if h.record_count != h.mipmap_count:
+        if h.record_count != h.cel_count:
             raise ImportError("Cannot read older version of MAT file")
         if h.record_count <= 0:
             raise ImportError("MAT file record count <= 0")
-        if not ( MAT.INDEXED < h.color_info.color_mode <= MAT.RGBA ): # must not be indexed color mode (0)
+        if not (MAT.INDEXED < h.color_info.color_mode <= MAT.RGBA): # must not be indexed color mode (0)
             raise ImportError("Invalid color mode")
-        if h.color_info.bpp % 8 != 0:
-            raise ImportError("BPP % 8 != 0")
+        if h.color_info.bpp % 8 != 0 and not (16 <= h.color_info.bpp <= 32) :
+            raise ImportError("Invalid color depth")
         return h
 
     @staticmethod
-    def _write_header(f, tex_count, bpp, alpha):
+    def _write_header(f, cel_count, bpp, alpha):
         cf = MAT.make_color_format(bpp, alpha)
-        h = MAT.mat_header(MAT_FILE_MAGIC, MAT_REQUIRED_VERSION, MAT_REQUIRED_TYPE, tex_count, tex_count, cf)
+        h = MAT.mat_header(MAT_FILE_MAGIC, MAT_REQUIRED_VERSION, MAT_REQUIRED_TYPE, cel_count, cel_count, cf)
 
         rh  = MAT.mh_serf.pack(*h[0:5]) # not including 'color_info' field
         rcf = MAT.cf_serf.pack(*cf)
@@ -318,13 +325,13 @@ class MAT:
         return epd
 
     @staticmethod
-    def _read_texture(f, width, height, ci): # f: file ci: color_format
+    def _read_pixel_data(f, width, height, ci): # f: file ci: color_format
         pd_size = MAT._get_pixel_data_size(width, height, ci.bpp)
         pd = bytearray(f.read(pd_size))
         return MAT._decode_pixel_data(pd, width, height, ci)
 
     @staticmethod
-    def _write_texture(f, pr, ci): # f: file pr: gimp.PixelRegion ci: color_format
+    def _write_pixel_data(f, pr, ci): # f: file pr: gimp.PixelRegion ci: color_format
         epd = MAT._encode_pixel_region(pr, ci)
         f.write(epd)
 
@@ -334,49 +341,47 @@ class MAT:
         mmh     = MAT.mat_mipmap_header._make(mmh_raw)
 
         pd = []
-        for i in range(0, mmh.texture_count):
-            tex_w = mmh.width  >> i
-            tex_h = mmh.height >> i
-            pd += [ MAT._read_texture(f, tex_w, tex_h, ci) ]
-
+        for i in range(0, mmh.mipmap_levels):
+            w = mmh.width  >> i
+            h = mmh.height >> i
+            pd += [ MAT._read_pixel_data(f, w, h, ci) ]
         return MAT.mipmap(mmh.width, mmh.height, ci, pd)
 
     @staticmethod
-    def write_mipmap(f, img, ci, min_mipmap_size, max_mipmap_level): # f:file, img:image, ci:color_format, min_mipmap_size:int, max_mipmap_level:int
+    def write_mipmap(f, img, ci, min_mipmap_size, max_mipmap_levels): # f:file, img:image, ci:color_format, min_mipmap_size:int, max_mipmap_levels:int
         imgs = [img]
         if (is_image_mipmap(img)):
-            imgs += make_mipmaps(img, min_mipmap_size, max_mipmap_level)
+            imgs += make_mipmaps(img, min_mipmap_size, max_mipmap_levels)
 
         mmh = MAT.mat_mipmap_header(img.width, img.height, 0, 0, 0, len(imgs))
         f.write( MAT.mmm_serf.pack(*mmh) )
 
         for idx, i in enumerate(imgs):
-            l = i.active_layer
+            l  = i.active_layer
             pr = l.get_pixel_rgn(0, 0, l.width, l.height)
-            MAT._write_texture(f, pr, ci)
-
+            MAT._write_pixel_data(f, pr, ci)
             if idx > 0:
                 pdb.gimp_image_delete(i)
 
 
     @staticmethod
-    def _get_tex_name(mmap_idx, tex_idx, mat_name):
+    def _get_img_name(cel_idx, lod_num, mat_name):
         name = os.path.splitext(mat_name)[0]
-        if mmap_idx > 0:
-            name += '_' + str(mmap_idx)
-        if tex_idx > 0:
-            name += '_' + str(tex_idx)
+        if cel_idx > 0:
+            name += '_cel_' + str(cel_idx)
+        if lod_num > 0:
+            name += '_lod_' + str(lod_num)
         return name
 
     @staticmethod
-    def _make_image(tex, width, height, ci):
+    def _make_image(pixdata, width, height, ci):
         img   = gimp.Image(width, height, RGB)
         layer = gimp.Layer(img, "", img.width, img.height, RGB_IMAGE, 100, NORMAL_MODE)
         if ci.alpha_bpp != 0:
             layer.add_alpha()
 
         pr = layer.get_pixel_rgn(0, 0, layer.width, layer.height)
-        pr[:,:] = tex.tostring()
+        pr[:,:] = pixdata.tostring()
 
         layer.flush()
         img.add_layer(layer)

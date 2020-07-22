@@ -24,7 +24,7 @@ LOAD_THUMB_PROC  = 'file-ijim-mat-load-thumb'
 SAVE_PROC        = 'file-ijim-mat-save'
 
 DEBUG_MODE               = True
-DISPLAY_MIPMAP_TEXTURES  = False
+DISPLAY_MIPMAP_LOD_CHAIN  = False # If True all images from mipmap LOD chain will be displayed
 
 DEFAULT_MAX_MIPMAP_LEVEL  = 4
 DEFAULT_MIN_MIPMAP_SIZE   = 16
@@ -50,8 +50,8 @@ def thumbnail_mat(file_path, thumb_size):
 
 def load_mat(file_path, raw_filename):
     try:
-        mat = MAT(DISPLAY_MIPMAP_TEXTURES)
-        mat.load_from_file(file_path)
+        mat = MAT()
+        mat.load_from_file(file_path, parse_lod=DISPLAY_MIPMAP_LOD_CHAIN)
         last_idx = len(mat.images) - 1
         if last_idx < 0:
             raise ImportError("No textures found")
