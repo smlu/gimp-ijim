@@ -35,7 +35,7 @@ class MAT:
         r = self._read_records(f, h)
 
         mat_name  = file_path #os.path.basename(file_path)
-        max_cells = h.cel_count if max_cells < 0 else max_cells
+        max_cells = h.cel_count if max_cells < 0 else min(max_cells, h.cel_count)
         for cel_idx in range(0, max_cells):
             mm = self._read_mipmap(f, h.color_info)
             for lod_num, pixdata in enumerate(mm.pixel_data_array):

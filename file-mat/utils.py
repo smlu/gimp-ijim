@@ -1,6 +1,5 @@
 from gimpfu import *
 
-
 def is_image_mipmap(img):
     para = img.parasite_find("mipmap")
     if para:
@@ -9,7 +8,6 @@ def is_image_mipmap(img):
 
 def set_image_as_mipmap(img, is_mipmap):
     img.attach_new_parasite("mipmap", is_mipmap, "")
-
 
 def make_mipmaps(img, min_size = 1, max_level = -1):
     if min_size < 1 or max_level == 0: return  []
