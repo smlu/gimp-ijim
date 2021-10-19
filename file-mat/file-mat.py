@@ -14,7 +14,7 @@ from mat import *
 t = gettext.translation('gimp20-python', gimp.locale_directory, fallback=True)
 _ = t.ugettext
 
-AUTHOR           = 'smlu'
+AUTHOR           = 'Crt Vavros'
 COPYRIGHT        = AUTHOR
 COPYRIGHT_YEAR   = '2019'
 
@@ -410,7 +410,7 @@ register(
         (PF_INT, 'image-height', 'Height of full-sized image')
     ],
     thumbnail_mat, #callback
-    no_run_mode_param = True
+    run_mode_param = False
 )
 
 register(
