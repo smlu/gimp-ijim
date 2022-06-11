@@ -432,8 +432,8 @@ register(
         (PF_INT  , 'image-width' , 'Width of full-sized image'),
         (PF_INT  , 'image-height', 'Height of full-sized image')
     ],
-    thumbnail_mat, #callback
-    run_mode_param = False
+    thumbnail_mat #callback
+    ,**({'run_mode_param': False} if gimp.version >= (2, 10, 32) else {})
 )
 
 register(
