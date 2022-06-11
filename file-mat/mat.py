@@ -245,20 +245,20 @@ class MAT:
         return 0xFFFFFFFF >> (32 - bpc)
 
     @staticmethod
-    def _decode_pixel(p, ci): # p: int, ci: color_format
-        r = ((p >> ci.red_shl)   & MAT._get_color_mask(ci.red_bpp))   << ci.red_shr
-        g = ((p >> ci.green_shl) & MAT._get_color_mask(ci.green_bpp)) << ci.green_shr
-        b = ((p >> ci.blue_shl)  & MAT._get_color_mask(ci.blue_bpp))  << ci.blue_shr
+    def _decode_pixel(p, ci, rmask, gmask, bmask, amask): # p: int, ci: color_format
+        r = ((p >> ci.red_shl)   & rmask) << ci.red_shr
+        g = ((p >> ci.green_shl) & gmask) << ci.green_shr
+        b = ((p >> ci.blue_shl)  & bmask) << ci.blue_shr
 
-        # Return pixel representation
+        # Set pixel tuple
         if ci.alpha_bpp != 0:
-            a = ((p >> ci.alpha_shl) & MAT._get_color_mask(ci.alpha_bpp)) << ci.alpha_shr
+            a = ((p >> ci.alpha_shl) & amask) << ci.alpha_shr
             if ci.alpha_bpp == 1: # RGBA5551
                 a = 255 if a > 0 else 0
-            p = (int(r), int(g), int(b), int(a))
+            p = (r, g, b, a)
         else:
-            p = (int(r), int(g), int(b))
-        return array("B", p)
+            p = (r, g, b)
+        return array('B', p)
 
     @staticmethod
     def _encode_pixel(p, ci): # p: array, ci: color_format
@@ -278,45 +278,49 @@ class MAT:
 
     @staticmethod
     def _decode_pixel_data(pd, width, height, ci): # ci: color_format
-        pixel_size = MAT._get_encoded_pixel_size(ci.bpp)
-        row_len    = MAT._get_img_row_len(width, ci.bpp)
-
+        e_pixel_size = MAT._get_encoded_pixel_size(ci.bpp)
+        e_row_len    = MAT._get_img_row_len(width, ci.bpp)
         d_pixel_size = MAT._get_decoded_pixel_size(ci)
         d_row_len    = d_pixel_size * width
-        dpd          = array("B", "\x00" * (height * d_row_len))
+        dpd          = array('B', '\x00' * (height * d_row_len))
 
-        # decode pixel little endian
-        fmt = "B" if pixel_size == 1 else "<H" if pixel_size == 2 else "<I"
+        rmask = MAT._get_color_mask(ci.red_bpp)
+        gmask = MAT._get_color_mask(ci.green_bpp)
+        bmask = MAT._get_color_mask(ci.blue_bpp)
+        amask = MAT._get_color_mask(ci.alpha_bpp)
         for r in range(0, height):
-            for c in range(0, row_len, pixel_size):
-                i = c + r * row_len
-                p_raw = pd[i: i + pixel_size]
-                if pixel_size == 3:
-                    p_raw = p_raw + bytearray(1)
-                pixel = int(unpack(fmt, p_raw)[0])
+            e_row_idx = r * e_row_len
+            d_row_idx = r * d_row_len
+            for c in range(0, e_row_len, e_pixel_size):
+                # decode pixel as little endian integer
+                pixel = 0
+                i = c + e_row_idx
+                for b in reversed(pd[i: i + e_pixel_size]):
+                    pixel = pixel << 8 | b
 
-                d_pos = (c / pixel_size) * d_pixel_size  + r * d_row_len
-                dpd[d_pos : (d_pos + d_pixel_size)] =  MAT._decode_pixel(pixel, ci)
+                d_pos = (c / e_pixel_size) * d_pixel_size + d_row_idx
+                dpd[d_pos : (d_pos + d_pixel_size)] = MAT._decode_pixel(pixel, ci, rmask, gmask, bmask, amask)
         return dpd
 
     @staticmethod
     def _encode_pixel_region(pr, ci): # pr: gimp.PixelRegion ci: color_format
         width        = pr.w
         height       = pr.h
-        #pixel_size   = pr.bpp
-        #row_len      = MAT._get_img_row_len(width, pr.bpp * 8)
-
+        row_len      = width * pr.bpp
         e_pixel_size = MAT._get_encoded_pixel_size(ci.bpp)
         e_row_len    = e_pixel_size * width
-        epd          = array("B", "\x00" * (height * e_row_len))
+        epd          = array('B', '\x00' * (height * e_row_len))
 
         # encode pixel as little endian
-        fmt = "B" if e_pixel_size == 1 else "<H" if e_pixel_size == 2 else "<I"
+        fmt = 'B' if e_pixel_size == 1 else '<H' if e_pixel_size == 2 else '<I'
+        img = tuple(array('B', pr[0:width, 0:height]))
         for y in range(0, height):
+            row_idx = y * row_len
             for x in range(0, width):
-                p   = tuple(array("B",pr[x, y]))
+                p_ofs = x * pr.bpp + row_idx
+                p   = img[p_ofs : p_ofs + pr.bpp] # get pixel. pr.bpp is bytes per pixel
                 e_p = MAT._encode_pixel(p, ci)
-                e_p = array("B", pack(fmt, e_p))
+                e_p = array('B', pack(fmt, e_p))
                 if e_pixel_size == 3:
                     e_p = e_p[:3:]
 
