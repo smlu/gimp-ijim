@@ -233,10 +233,22 @@ def save_mat(export_img, drawable, filename, raw_filename):
             t_mm_level_count.attach(gtk.Label('Max Level:  '), 0,1,0,1)
             t_mm_level_count.attach(sb_mm_level_count,  1,2,0,1)
 
-            # Mipmap option frame
+            # Toggle MipMap button
+            btnToggleMipMap = gtk.Button('Toggle MipMap')
+            btnToggleMipMap.set_tooltip_text(_('Toggle On/Off MipMap exporting for all textures'))
+            def btn_toggle_mipmap(btn):
+                mip_on = btn.get_property('image-position')
+                mip_on = not mip_on
+                btn.set_property('image-position', mip_on) # HACK, store mipmap toggle state under image-position property since it's not being used here
+                for row in self.liststore:
+                    row[self.COL_IDX_IS_MIPMAP] = bool(mip_on)
+            btnToggleMipMap.connect('clicked', btn_toggle_mipmap)
+
+            # MipMap option frame
             box = gtk.VBox(True, 2)
             box.pack_start(t_mm_min_size, False, False)
             box.pack_start(t_mm_level_count, False, False)
+            box.pack_start(btnToggleMipMap, False, False)
             mmo_frame = gimpui.Frame('MipMap Options:')
             mmo_frame.set_shadow_type(gtk.SHADOW_IN)
             mmo_frame.add(box)
