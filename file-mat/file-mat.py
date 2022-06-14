@@ -52,6 +52,10 @@ INPUT_MAX_MIPMAP_LEVEL    = 16
 INPUT_MAX_MIN_MIPMAP_SIZE = 128
 THUMBNAIL_SIZE            = 128
 
+if DEBUG_MODE:
+    sys.stderr = open('file-mat-error.txt', 'a')
+    sys.stdout = open('file-mat-log.txt', 'a')
+
 def thumbnail_mat(file_path, thumb_size):
     mat = MAT()
     img = mat.load_from_file(file_path, max_cells=1)
