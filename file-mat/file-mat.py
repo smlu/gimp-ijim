@@ -138,12 +138,12 @@ def save_mat(export_img, drawable, filename, raw_filename):
         COL_IDX_INFO       = 2
         COL_IDX_IS_MIPMAP  = 3 
         COL_IDX_EXPORT     = 4
-        COL_IDX_LAYER_NAME = 5
+        COL_IDX_CEL_NUM    = 5
         RESPONSE_EXPORT    = 1
 
         def __init__(self):
             gimpui.Dialog.__init__(self, 
-               title=_('Export Images as MAT'), role=EDITOR_PROC, help_id=None,
+               title=_('Export Image as MAT'), role=EDITOR_PROC, help_id=None,
                 buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CLOSE,_('Export'), self.RESPONSE_EXPORT)
             )
             
@@ -255,13 +255,14 @@ def save_mat(export_img, drawable, filename, raw_filename):
         def make_image_view(self):
             import gobject
 
-            # store columns: 0 = layer, 1 = pixbuf, 2 = info, 3 = is_mipmamp, 4 = include in export, 5 = layer  name
-            self.liststore = gtk.ListStore(gobject.TYPE_PYOBJECT, gtk.gdk.Pixbuf, str, gobject.TYPE_BOOLEAN, gobject.TYPE_BOOLEAN, str)
-            for layer in reversed(self.eimg.layers):
+            # store columns: 0 = layer, 1 = pixbuf, 2 = info, 3 = is_mipmamp, 4 = include in export, 5 = layer name
+            self.liststore = gtk.ListStore(gobject.TYPE_PYOBJECT, gtk.gdk.Pixbuf, str, gobject.TYPE_BOOLEAN, gobject.TYPE_BOOLEAN, int)
+            for idx, layer in enumerate(reversed(self.eimg.layers)):
                 pbuf = get_layer_thumbnail(layer)
-                img_info = '<b>Size</b>: %dx%d' % (layer.width, layer.height)
-                img_info += '\n<b>Color</b>: %s' % ('RGB' if self.eimg.base_type == RGB else 'Grayscale' if self.eimg.base_type == GRAY else 'Indexed')
-                self.liststore.append([layer, pbuf, img_info, is_layer_mipmap(layer), True, layer.name])
+                img_info = '<b>Name</b>: {}'.format(layer.name)
+                img_info += '\n<b>Size</b>: {}x{}'.format(layer.width, layer.height)
+                img_info += '\n<b>Color</b>: {}'.format('RGB' if self.eimg.base_type == RGB else 'Grayscale' if self.eimg.base_type == GRAY else 'Indexed')
+                self.liststore.append([layer, pbuf, img_info, is_layer_mipmap(layer), True, idx])
 
             self.export_tex_count = len(self.liststore)
 
@@ -270,13 +271,88 @@ def save_mat(export_img, drawable, filename, raw_filename):
             self.treeview.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_BOTH)
             self.treeview.get_selection().set_mode(gtk.SELECTION_NONE)
 
-            # Column 'Export'
+            # Column 'Cel num'
+            renderer = gtk.CellRendererText()
+            col_cel_num = gtk.TreeViewColumn('Cel No.', renderer, text=self.COL_IDX_CEL_NUM)
+            col_cel_num.pack_start(renderer, expand=False)
+            
+            col_cel_num_header = gtk.Label('Cel No.')
+            col_cel_num_header.show()
+
+            tt_cel_num = gtk.Tooltips()
+            tt_cel_num.set_tip(col_cel_num_header, 'MAT CEL number.\ni.e.: The sequence number of layer texture when exported to MAT file.')
+
+            col_cel_num.set_widget(col_cel_num_header)
+            self.treeview.append_column(col_cel_num)
+
+           
+
+            # Column 'Texture'
+            pixrd      = gtk.CellRendererPixbuf()
+            col_pixbuf = gtk.TreeViewColumn('Texture', pixrd, pixbuf=self.COL_IDX_THUMB)
+            col_pixbuf.set_min_width(THUMBNAIL_SIZE)
+            self.treeview.append_column(col_pixbuf)
+
+            # Column 'Info'
+            col_info = gtk.TreeViewColumn()
+
+            # column tooltip
+            col_info_header = gtk.Label('Info & Options')
+            col_info_header.show()
+            col_info.set_widget(col_info_header)
+
+            tt_info = gtk.Tooltips()
+            tt_info.set_tip(col_info_header, "Layer info and export options.\nIf 'MipMap' is checked, layer image will be exported as MipMap texture.")
+
+            # info text
+            renderer = gtk.CellRendererText()
+            renderer.set_property('width', 0)
+            renderer.set_property('yalign', 0.4)
+            renderer.set_property('height', THUMBNAIL_SIZE)
+            col_info.pack_start(renderer, expand=False)
+            col_info.set_attributes(renderer, markup=self.COL_IDX_INFO)
+
+            # label MipMap
+            renderer = gtk.CellRendererText()
+            renderer.set_property('markup', '<b>MipMap</b>:')
+            renderer.set_property('xalign', 0.0)
+            renderer.set_property('yalign', 0.85)
+            col_info.pack_start(renderer, expand=False)
+
+            # cb MipMap
+            renderer = gtk.CellRendererToggle()
+            renderer.set_property('xalign', 0.0)
+            renderer.set_property('yalign', 0.85)
+            renderer.set_property('width', 158)
+
+            def on_cb_mipmap_toggled(widget, path):
+                is_mipmap = not self.liststore[path][self.COL_IDX_IS_MIPMAP]
+                self.liststore[path][self.COL_IDX_IS_MIPMAP] = is_mipmap
+                set_layer_as_mipmap(self.liststore[path][self.COL_IDX_LAYER], is_mipmap)
+
+            renderer.connect('toggled', on_cb_mipmap_toggled)
+
+            col_info.pack_start(renderer)
+            col_info.set_attributes(renderer, active=self.COL_IDX_IS_MIPMAP)
+
+            self.treeview.append_column(col_info)
+
+             # Column 'Export'
             def on_cb_export_toggled(widget, path):
-                export = not self.liststore[path][self.COL_IDX_EXPORT]
-                self.liststore[path][self.COL_IDX_EXPORT] = export
+                row = self.liststore[path]
+                export = not row[self.COL_IDX_EXPORT]
+                row[self.COL_IDX_EXPORT] = export
                 self.export_tex_count += 1 if export else -1
                 self.set_btn_export_sensitive(self.export_tex_count > 0)
-                self.img_view_frame.set_label('Cel texture(s) to export: %d' % self.export_tex_count)
+                self.img_view_frame.set_label('Cel texture(s) to export: {}'.format(self.export_tex_count))
+
+                # re-enumerate rows
+                idx = 0
+                row[self.COL_IDX_CEL_NUM] = idx if export else -1
+                for row in self.liststore:
+                    if row[self.COL_IDX_CEL_NUM] > -1:
+                        row[self.COL_IDX_CEL_NUM] = idx
+                        idx += 1
 
             cb_export = gtk.CellRendererToggle()
             cb_export.connect('toggled', on_cb_export_toggled)
@@ -291,58 +367,9 @@ def save_mat(export_img, drawable, filename, raw_filename):
             col_export.set_widget(col_export_header)
             self.treeview.append_column(col_export)
 
-            # Column 'Texture'
-            pixrend    = gtk.CellRendererPixbuf()
-            col_pixbuf = gtk.TreeViewColumn('Texture', pixrend, pixbuf=self.COL_IDX_THUMB)
-            col_pixbuf.set_min_width(THUMBNAIL_SIZE)
-            self.treeview.append_column(col_pixbuf)
-
-            # Column 'Info'
-            col_info = gtk.TreeViewColumn()
-
-            # column tooltip
-            col_info_header = gtk.Label('Info & Options')
-            col_info_header.show()
-            col_info.set_widget(col_info_header)
-
-            tt_info = gtk.Tooltips()
-            tt_info.set_tip(col_info_header, "Image export info and options.\nIf check box 'MipMap' is checked, image will be exported as MipMap texture.")
-
-            # info text
-            renderer = gtk.CellRendererText()
-            renderer.set_property('yalign', 0.4)
-            renderer.set_property('width', 0)
-            renderer.set_property('height', THUMBNAIL_SIZE)
-            col_info.pack_start(renderer)
-            col_info.set_attributes(renderer, markup=2)
-
-            # label mipmap
-            renderer = gtk.CellRendererText()
-            renderer.set_property('markup', '<b>MipMap</b>:')
-            renderer.set_property('xalign', 0.0)
-            renderer.set_property('yalign', 0.7)
-            col_info.pack_start(renderer)
-
-            # cb mipmamp
-            renderer = gtk.CellRendererToggle()
-            renderer.set_property('yalign', 0.7)
-            renderer.set_property('xalign', 0.0)
-            renderer.set_property('width', 100)
-
-            def on_cb_mipmap_toggled(widget, path):
-                is_mipmap = not self.liststore[path][self.COL_IDX_IS_MIPMAP]
-                self.liststore[path][self.COL_IDX_IS_MIPMAP] = is_mipmap
-                set_layer_as_mipmap(self.liststore[path][self.COL_IDX_LAYER], is_mipmap)
-
-            renderer.connect('toggled', on_cb_mipmap_toggled)
-
-            col_info.pack_start(renderer)
-            col_info.set_attributes(renderer, active=self.COL_IDX_IS_MIPMAP)
-
-            self.treeview.append_column(col_info)
-
+            # Scroll window & root frame
             scrl_win = gtk.ScrolledWindow()
-            scrl_win.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+            scrl_win.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
             scrl_win.add(self.treeview)
             scrl_win.set_size_request(THUMBNAIL_SIZE, THUMBNAIL_SIZE * 4)
 
@@ -350,7 +377,7 @@ def save_mat(export_img, drawable, filename, raw_filename):
             frame_imgs.set_property('label-xalign', 0.05)
             frame_imgs.set_shadow_type(gtk.SHADOW_IN)
             frame_imgs.add(scrl_win)
-            frame_imgs.set_size_request(380, -1)
+            frame_imgs.set_size_request(535, -1)
 
             return frame_imgs
 
@@ -382,7 +409,7 @@ def save_mat(export_img, drawable, filename, raw_filename):
                 if not row[self.COL_IDX_EXPORT]: # 4 - include in export
                     self.eimg.remove_layer(row[self.COL_IDX_LAYER])
 
-            # Export images as MAT file format
+            # Export image as MAT file format
             cf = self.get_export_color_format()
             mat.save_to_file(filename, self.eimg, cf, self.lod_min_size, self.lod_max_levels)
 
