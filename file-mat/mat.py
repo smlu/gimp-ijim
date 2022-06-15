@@ -340,7 +340,7 @@ class MAT:
 
     @staticmethod
     def write_texture(f, layer, ci, min_mipmap_size, max_mipmap_levels): # f:file, img:image, ci:color_format, min_mipmap_size:int, max_mipmap_levels:int
-        lod_pixels = [layer.get_pixel_rgn(0, 0, layer.width, layer.height)]
+        lod_pixels = [layer.get_pixel_rgn(0, 0, layer.width, layer.height, False, False)]
         if (is_layer_mipmap(layer)):
             lod_pixels += make_mipmap_lods(layer, min_mipmap_size, max_mipmap_levels)
 
