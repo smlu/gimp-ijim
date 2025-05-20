@@ -66,7 +66,8 @@ def make_mipmap_lods(layer: Gimp.Layer, min_size: int = 1, max_level: int = -1) 
         img.insert_layer(new_layer, None, -1)
 
         # Scale it down and attach list
-        new_layer.scale(lod_width, lod_height, local_origin=False)
+        # Note: the scale will apply sRGB conversion and the mipmap images will be slightly brighter than the original
+        new_layer.scale(lod_width, lod_height, local_origin=False) 
         lods.append(new_layer.get_buffer())
 
         # Prepare next level
