@@ -1,5 +1,5 @@
 # File-MAT GIMP plugin
-# Copyright (c) 2019-2022 Crt Vavros
+# Copyright (c) 2019-2025 Crt Vavros
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -19,40 +19,68 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from gimpfu import *
+import gi
+gi.require_version('Gimp', '3.0')
+from gi.repository import Gimp, Gegl
+from typing import List
 
-def is_layer_mipmap(img):
-    para = img.parasite_find('mipmap')
-    if para:
-        return para.flags
-    return False
+def is_layer_mipmap(layer: Gimp.Layer) -> bool:
+    """
+    Check whether the given layer has a 'mipmap' parasite attached.
+    """
+    par = layer.get_parasite('mipmap')
+    return par and par.get_data() == [1]
 
-def set_layer_as_mipmap(layer, is_mipmap):
-    layer.attach_new_parasite('mipmap', is_mipmap, '')
+def set_layer_as_mipmap(layer: Gimp.Layer, is_mipmap: bool) -> None:
+    """
+    Attach or update the 'mipmap' parasite on a layer.
+    """
+    # Remove any existing mipmap parasite
+    layer.detach_parasite('mipmap')
 
-def make_mipmap_lods(layer, min_size = 1, max_level = -1):
-    """Returns list of MipMap layers"""
-    if min_size < 1 or max_level == 0: return  []
+    parasite = Gimp.Parasite.new(
+        name  = 'mipmap',
+        flags = 1, # 1-persistent
+        data  = [1 if is_mipmap else 0]
+    )
+    layer.attach_parasite(parasite)
+
+def make_mipmap_lods(layer: Gimp.Layer, min_size: int = 1, max_level: int = -1) -> List[Gegl.Buffer]:
+    """
+    Generate a list of pixel regions for successive Mipmap levels of `layer`.
+    Stops when either dimension falls below min_size or max_level is exhausted.
+    """
+    if min_size < 1 or max_level == 0:
+        return []
+
+    img  = layer.get_image()
     lods = []
-    img = layer.image
-    lod_width  = layer.width >> 1
-    lod_height = layer.height >> 1
-    while(lod_width >= min_size and lod_height >= min_size and max_level - 1 != 0):
-        l = pdb.gimp_layer_new_from_drawable(layer, img)
-        img.add_layer(l)
-        l.scale(lod_width, lod_height)
-        lods.append(l.get_pixel_rgn(0, 0, l.width, l.height))
-        lod_width  = lod_width >> 1
-        lod_height = lod_height >> 1
-        max_level -= 1
+
+    lod_width  = layer.get_width()  // 2
+    lod_height = layer.get_height() // 2
+
+    level = max_level
+    while lod_width >= min_size and lod_height >= min_size and level != 0:
+        # Clone the layer
+        new_layer = layer.copy()
+        img.insert_layer(new_layer, None, -1)
+
+        # Scale it down and attach list
+        # Note: the scale will apply sRGB conversion and the mipmap images will be slightly brighter than the original
+        new_layer.scale(lod_width, lod_height, local_origin=False) 
+        lods.append(new_layer.get_buffer())
+
+        # Prepare next level
+        lod_width  //= 2
+        lod_height //= 2
+        level       -= 1
 
     return lods
 
-def sanitize_image(img):
-    # src: https://gitlab.gnome.org/GNOME/gimp/blob/master/app/file/file-open.c#L730
 
-    # Enable image undo
-    while(not img.undo_is_enabled()):
+def sanitize_image(img: Gimp.Image) -> None:
+    # src: https://gitlab.gnome.org/GNOME/gimp/-/blob/GIMP_3_0_2/app/file/file-open.c?ref_type=tags#L759
+    while not img.undo_is_enabled():
         img.undo_thaw()
-
+    # Clear all undo history
     img.clean_all()
