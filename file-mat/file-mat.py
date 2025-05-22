@@ -119,24 +119,27 @@ def load_mat(procedure, run_mode, file, metadata, flags, config, *run_data):
                
 def export_mat(procedure, run_mode, image, file, options, metadata, config, data):
     GimpUi.init(EXPORT_PROC)
-    
+
     class ExportDialog(GimpUi.Dialog):
         COL_IDX_LAYER      = 0
         COL_IDX_THUMB      = 1
         COL_IDX_INFO       = 2
-        COL_IDX_IS_MIPMAP  = 3 
+        COL_IDX_IS_MIPMAP  = 3
         COL_IDX_EXPORT     = 4
         COL_IDX_CEL_NUM    = 5
         RESPONSE_EXPORT    = 1
 
         def __init__(self):
-            GimpUi.Dialog.__init__(self, 
+            GimpUi.Dialog.__init__(self,
                title=_('Export Image as MAT'), role=EDITOR_PROC,
                parent=None, modal=True
             )
-            
+
+            self.set_modal(True)
+            self.set_keep_above(True)
+
             self.eimg = image.duplicate()
-            
+
             self.add_button(_("Cancel"), Gtk.ResponseType.CANCEL)
             self.add_button(_("Export"), self.RESPONSE_EXPORT)
 
@@ -147,13 +150,25 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             self.lod_max_levels = DEFAULT_MAX_MIPMAP_LEVEL
             self.lod_min_size   = DEFAULT_MIN_MIPMAP_SIZE
 
+            # Make export options & image view widgets
             export_opt_box      = self.make_export_options_box()
             self.img_view_frame = self.make_image_view()
 
+            # Pack image vie widget and total export widget in a vertical box
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            vbox.pack_start(self.img_view_frame, True, True, 15)
+
+            self.total_label = Gtk.Label()
+            self.total_label.set_markup (f'<b>Texture(s) to export: {self.export_tex_count}</b>')
+            self.total_label.set_xalign(0.1)
+            vbox.pack_end(self.total_label , True, True, 0)
+
+            # Pack Export options and image view widgets in a horizontal box
             hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
             hbox.pack_start(export_opt_box, True, True, 40)
-            hbox.pack_start(self.img_view_frame, True, True, 15)
+            hbox.pack_start(vbox, True, True, 15)
 
+            # Add hbox to the content area of the dialog
             self.get_content_area().pack_start(hbox, True, True, 0)
             self.show_all()
 
@@ -163,31 +178,39 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             Gimp.Image.delete(self.eimg)
 
         def make_export_options_box(self):
-            # Color depth
-            self.rb_color_16bit      = Gtk.RadioButton(label='16 bit')
-            self.cb_16bit_alpha_1bit = Gtk.CheckButton(label='Alpha 1 bit')
-            self.cb_16bit_alpha_1bit.set_tooltip_text(_('Export in RGBA-5551 format when image has alpha channel.'))
-            self.rb_color_32bit      = Gtk.RadioButton.new_from_widget(self.rb_color_16bit)
-            self.rb_color_32bit.set_label('32 bit')
+            b_alpha = self.has_alpha(self.eimg)
 
-            # Enable/Disable 1 bit alpha checkbox whene color depth radio button is clicked
-            self.rb_color_16bit.connect('toggled', lambda b: self.cb_16bit_alpha_1bit.set_sensitive(True))
-            self.rb_color_32bit.connect('toggled', lambda b: self.cb_16bit_alpha_1bit.set_sensitive(False))
+            # Color depth
+            if b_alpha:
+                self.rb_color_16bit = Gtk.RadioButton(label='16 bit (RGBA-4444)')
+
+                self.rb_color_16bit_alpha_1bit = Gtk.RadioButton.new_from_widget(self.rb_color_16bit)
+                self.rb_color_16bit_alpha_1bit.set_label('16 bit (RGBA-5551)')
+
+                self.rb_color_32bit = Gtk.RadioButton.new_from_widget(self.rb_color_16bit_alpha_1bit)
+                self.rb_color_32bit.set_label('32 bit (RGBA-8888)')
+            else:
+                self.rb_color_16bit = Gtk.RadioButton(label='16 bit (RGB-565)')
+                self.rb_color_16bit_alpha_1bit = None
+
+                self.rb_color_32bit = Gtk.RadioButton.new_from_widget(self.rb_color_16bit)
+                self.rb_color_32bit.set_label('24 bit (RGB-888)')
 
             # Place color depth radio buttons in a box
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
             box.pack_start(self.rb_color_16bit, False, False, 0)
-
-            # 1 bit alpha checkbox
-            a1bit_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-            a1bit_hbox.pack_start(self.cb_16bit_alpha_1bit, False, False, 20)
-            box.pack_start(a1bit_hbox, False, False, 0)
+            if self.rb_color_16bit_alpha_1bit:
+                box.pack_start(self.rb_color_16bit_alpha_1bit, False, False, 0)
 
             # 32 bit radio button
             box.pack_start(self.rb_color_32bit, False, False, 0)
 
             # Add box to a frame
-            cdo_frame = Gtk.Frame(label='Color Depth:')
+            cdo_frame_label = Gtk.Label()
+            cdo_frame_label.set_markup('<b>Color Depth:</b>')
+
+            cdo_frame = Gtk.Frame()
+            cdo_frame.set_label_widget(cdo_frame_label)
             cdo_frame.add(box)
 
             # Min MM size
@@ -211,14 +234,14 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             sb_mm_min_size.connect('changed', sb_mm_min_size_changed)
 
             t_mm_min_size = Gtk.Grid()
-            t_mm_min_size.attach(Gtk.Label(label='Min Size:  '), 0, 0, 1, 1)
+            t_mm_min_size.attach(Gtk.Label(label='Min Size:    '), 0, 0, 1, 1)
             t_mm_min_size.attach(sb_mm_min_size, 1, 0, 1, 1)
 
             # Max MM level
-            adjustment = Gtk.Adjustment(value=self.lod_max_levels, 
-                                    lower=1, 
-                                    upper=INPUT_MAX_MIPMAP_LEVEL, 
-                                    step_increment=1)
+            adjustment = Gtk.Adjustment(value=self.lod_max_levels,
+                                        lower=1,
+                                        upper=INPUT_MAX_MIPMAP_LEVEL,
+                                        step_increment=1)
             sb_mm_level_count = Gtk.SpinButton(adjustment=adjustment)
             sb_mm_level_count.set_tooltip_text(_('Max Mipmap LOD level'))
             sb_mm_level_count.set_numeric(True)
@@ -233,25 +256,33 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             t_mm_level_count.attach(sb_mm_level_count, 1, 0, 1, 1)
 
             # Toggle Mipmap button
-            btnToggleMipMap = Gtk.Button(label='Toggle Mipmap')
-            btnToggleMipMap.set_tooltip_text(_('Toggle On/Off Mipmap exporting for all textures'))
+            btn_toggle_mipmap = Gtk.Button(label='Toggle Mipmap')
+            btn_toggle_mipmap.set_tooltip_text(_('Toggle On/Off Mipmap exporting for all textures'))
             
-            def btn_toggle_mipmap(btn):
+            def btn_toggle_mipmap_clicked(btn):
                 # Store our state in a custom property
                 mip_on = getattr(btn, 'mipmap_toggle_state', False)
-                mip_on = not mip_on
+                mip_on = bool(not mip_on)
                 setattr(btn, 'mipmap_toggle_state', mip_on)
                 for row in self.liststore:
-                    row[self.COL_IDX_IS_MIPMAP] = bool(mip_on)
-            btnToggleMipMap.connect('clicked', btn_toggle_mipmap)
+                    row[self.COL_IDX_IS_MIPMAP] = mip_on
+                    set_layer_as_mipmap(row[self.COL_IDX_LAYER], mip_on)
+
+            btn_toggle_mipmap.connect('clicked', btn_toggle_mipmap_clicked)
 
             # Mipmap option frame
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             box.set_homogeneous(True)
             box.pack_start(t_mm_min_size, False, False, 0)
             box.pack_start(t_mm_level_count, False, False, 0)
-            box.pack_start(btnToggleMipMap, False, False, 0)
-            mmo_frame = Gtk.Frame(label='Mipmap Options:')
+            box.pack_start(btn_toggle_mipmap, False, False, 0)
+
+            # Add Mipmap options to a frame
+            cmmo_frame_label = Gtk.Label()
+            cmmo_frame_label.set_markup('<b>Mipmap Options:</b>')
+            
+            mmo_frame = Gtk.Frame()
+            mmo_frame.set_label_widget(cmmo_frame_label)
             mmo_frame.add(box)
 
             # Main option frame
@@ -268,12 +299,13 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
         def make_image_view(self):
             # Create a ListStore model
             self.liststore = Gtk.ListStore(GObject.TYPE_PYOBJECT, GdkPixbuf.Pixbuf, str, bool, bool, int) # layer, thumbnail image, info text, is_mipmap, export, cel_num
-            
+
             for idx, layer in enumerate(reversed(self.eimg.get_layers())):
                 pbuf = self.get_layer_thumbnail(layer)
-                img_info = '<b>Name</b>: {}'.format(layer.get_name())
-                img_info += '\n<b>Size</b>: {}x{}'.format(layer.get_width(), layer.get_height())
+                img_info = f'<b>Name</b>: {layer.get_name()}'
+                img_info += f'\n<b>Size</b>: {layer.get_width()}x{layer.get_height()}'
                 img_info += '\n<b>Color</b>: {}'.format('RGB' if self.eimg.get_base_type() == Gimp.ImageBaseType.RGB else 'Grayscale' if self.eimg.get_base_type() == Gimp.ImageBaseType.GRAY else 'Indexed')
+                img_info += '\n<b>Mipmap</b>:'
                 self.liststore.append([layer, pbuf, img_info, is_layer_mipmap(layer), True, idx])
 
             self.export_tex_count = len(self.liststore)
@@ -285,14 +317,16 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
 
             # Column 'Cel num'
             renderer = Gtk.CellRendererText()
-            col_cel_num = Gtk.TreeViewColumn('Cel No.', renderer, text=self.COL_IDX_CEL_NUM)
+            renderer.set_property('xalign', 0.5)
+
+            col_cel_num = Gtk.TreeViewColumn('Cel', renderer, text=self.COL_IDX_CEL_NUM)
             col_cel_num.pack_start(renderer, False)
             
-            col_cel_num_header = Gtk.Label(label='Cel No.')
+            col_cel_num_header = Gtk.Label(label='Cel')
             col_cel_num_header.show_all()
 
             tooltip = Gtk.Tooltip()
-            col_cel_num_header.set_tooltip_text('MAT CEL number.\ni.e.: The sequence number of layer texture when exported to MAT file.')
+            col_cel_num_header.set_tooltip_text('MAT cel number.\ni.e.: The sequence number of layer texture when exported to MAT file.')
 
             col_cel_num.set_widget(col_cel_num_header)
             self.treeview.append_column(col_cel_num)
@@ -315,24 +349,16 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
 
             # info text
             renderer = Gtk.CellRendererText()
-            renderer.set_property('width', 0)
             renderer.set_property('yalign', 0.4)
+            renderer.set_property('width', 260)
             renderer.set_property('height', THUMBNAIL_SIZE)
             col_info.pack_start(renderer, False)
             col_info.add_attribute(renderer, 'markup', self.COL_IDX_INFO)
 
-            # label Mipmap
-            renderer = Gtk.CellRendererText()
-            renderer.set_property('markup', '<b>Mipmap</b>:')
-            renderer.set_property('xalign', 0.0)
-            renderer.set_property('yalign', 0.85)
-            col_info.pack_start(renderer, False)
-
             # CB Mipmap
             renderer = Gtk.CellRendererToggle()
-            renderer.set_property('xalign', 0.0)
+            renderer.set_property('xalign', 0.3) # have no effect
             renderer.set_property('yalign', 0.85)
-            renderer.set_property('width', 158)
 
             def on_cb_mipmap_toggled(widget, path):
                 is_mipmap = not self.liststore[path][self.COL_IDX_IS_MIPMAP]
@@ -341,7 +367,7 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
 
             renderer.connect('toggled', on_cb_mipmap_toggled)
 
-            col_info.pack_start(renderer, True)
+            col_info.pack_start(renderer, False)
             col_info.add_attribute(renderer, 'active', self.COL_IDX_IS_MIPMAP)
 
             self.treeview.append_column(col_info)
@@ -353,7 +379,7 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
                 row[self.COL_IDX_EXPORT] = export
                 self.export_tex_count += 1 if export else -1
                 self.set_btn_export_sensitive(self.export_tex_count > 0)
-                self.img_view_frame.set_label('Cel texture(s) to export: {}'.format(self.export_tex_count))
+                self.total_label.set_markup(f'<b>Texture(s) to export: {self.export_tex_count}</b>')
 
                 # re-enumerate rows
                 idx = 0
@@ -380,10 +406,9 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             scrl_win = Gtk.ScrolledWindow()
             scrl_win.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
             scrl_win.add(self.treeview)
-            scrl_win.set_size_request(THUMBNAIL_SIZE, THUMBNAIL_SIZE * 4)
+            scrl_win.set_size_request(THUMBNAIL_SIZE, THUMBNAIL_SIZE * 5 + THUMBNAIL_SIZE // 2)
 
-            frame_imgs = Gtk.Frame(label='Texture(s) to export: {}'.format(self.export_tex_count))
-            frame_imgs.set_property('label-xalign', 0.05)
+            frame_imgs = Gtk.Frame()
             frame_imgs.add(scrl_win)
             frame_imgs.set_size_request(535, -1)
 
@@ -394,9 +419,7 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             
             width = layer.get_width()
             height = layer.get_height()
-            
-            print('get_layer_thumbnail: layer w={}, h={}'.format(width, height))
-            
+
             img = Gimp.Image.new(width, height, Gimp.ImageBaseType.RGB)
             lcpy = Gimp.Layer.new_from_drawable(layer, img)
             lcpy.set_visible(True)
@@ -404,13 +427,12 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
             
             scale = float(THUMBNAIL_SIZE) / max(width, height)
             if scale and scale != 1.0:
-                width = int(width * scale)
+                width  = int(width * scale)
                 height = int(height * scale)
             
             buffer = Gimp.Image.get_thumbnail(img, width, height, Gimp.PixbufTransparency.SMALL_CHECKS)
 
             Gimp.Image.delete(img)
-            print('get_layer_thumbnail: thumbnail width={} height={}'.format(buffer.get_width(), buffer.get_height()))
             return buffer
 
         def has_alpha(self, img):
@@ -421,16 +443,18 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
 
         def get_export_color_format(self):
             alpha = self.has_alpha(self.eimg)
-            if self.rb_color_16bit.get_active():
-                if alpha:
-                    if self.cb_16bit_alpha_1bit.get_active():
-                        return MAT.color_format(MAT.RGBA, 16, 5,5,5, 11,6,1, 3,3,3, 1,0,7) #RGBA5551
-                    return MAT.color_format(MAT.RGBA, 16, 4,4,4, 12,8,4, 4,4,4, 4,0,4) #RGBA4444
-                return MAT.color_format(MAT.RGB, 16, 5,6,5, 11,5,0, 3,2,3, 0,0,0) #RGB565
-            else: # 32 bit
-                if alpha:
-                    return MAT.color_format(MAT.RGBA, 32, 8,8,8, 24,16,8, 0,0,0, 8,0,0) #RGBA8888
-                return MAT.color_format(MAT.RGB, 24, 8,8,8, 16,8,0, 0,0,0, 0,0,0) #RGB888
+            if alpha: # RGBA
+                if self.rb_color_16bit.get_active():
+                    return RGBA4444
+                if self.rb_color_16bit_alpha_1bit.get_active():
+                    return RGBA5551
+                else:
+                    return RGBA8888 # 32 bit RGBA
+            else: # RGB
+                if self.rb_color_16bit.get_active():
+                    return RGB565 # 16 bit RGB
+                else:
+                    return RGB888 # 24 bit RGB
 
         def export_image(self):
             mat = MAT()
@@ -462,7 +486,7 @@ def export_mat(procedure, run_mode, image, file, options, metadata, config, data
 
     ExportDialog()
     Gtk.main()
-    
+
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
